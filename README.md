@@ -1,4 +1,12 @@
-# Movement-HUD
+# Installation
+
+1. Extract the `cstrike` folder from the ZIP file to your game's root directory (usually: `\Half-Life\`)
+
+2. Open the `plugins.ini` file (located in: `\cstrike\addons\amxmodx\configs\`)
+
+3. Add the following line to the file: `distance_prediction.amxx`
+
+4. Save the file and restart your game
 
 # Commands
 
@@ -8,9 +16,9 @@
 
 ## Distance Prediction
 
-- `/dps` - Open Distance Prediction Settings Menu
+- `/dp` `/distpred` - Enable/Disable Distance Prediction
 
-- `/dp` `/distpred` - Enable/Disable Plugin
+- `/dps` - Open Distance Prediction Settings Menu
 
 - `/sonar` - Enable/Disable Sonar
 
@@ -39,3 +47,15 @@
 - `/bjpred` - Bhop Jump
 
 - `/ldjpred` - Ladder Jump
+
+## MHUD Speed
+
+- `mspeed` - Enable/Disable MHUD Speed
+
+- `mspeeds` - Open MHUD Speed Settings Menu
+
+## Input Overlay
+
+- `mkey` - Enable/Disable Input Overlay
+
+- `mkeys` - Open Input Overlay Settings Menu
