@@ -4,8 +4,16 @@
 
 2. Open the `plugins.ini` file (located in: `\cstrike\addons\amxmodx\configs\`)
 
-3. Add the following line to the file: `distance_prediction.amxx`
+3. Add the following 4 lines to the file:
 
+- `movementhud.amxx`
+
+- `distance_prediction.amxx`
+
+- `mhud_speed.amxx`
+
+- `input_overlay.amxx`
+   
 4. Save the file and restart your game
 
 # Commands
