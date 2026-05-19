@@ -8,12 +8,12 @@
 
 - `movementhud.amxx`
 
-- `distance_prediction.amxx`
-
 - `mhud_speed.amxx`
 
 - `input_overlay.amxx`
-   
+
+- `distance_prediction.amxx`
+  
 4. Save the file and restart your game
 
 # Commands
@@ -21,6 +21,18 @@
 ## General
 
 - `/mhud` - Open Plugin Settings Menu
+
+## MHUD Speed
+
+- `/mspeed` - Enable/Disable MHUD Speed
+
+- `/mspeeds` - Open MHUD Speed Settings Menu
+
+## Input Overlay
+
+- `/mkey` - Enable/Disable Input Overlay
+
+- `/mkeys` - Open Input Overlay Settings Menu
 
 ## Distance Prediction
 
@@ -55,15 +67,3 @@
 - `/bjpred` - Bhop Jump
 
 - `/ldjpred` - Ladder Jump
-
-## MHUD Speed
-
-- `/mspeed` - Enable/Disable MHUD Speed
-
-- `/mspeeds` - Open MHUD Speed Settings Menu
-
-## Input Overlay
-
-- `/mkey` - Enable/Disable Input Overlay
-
-- `/mkeys` - Open Input Overlay Settings Menu
