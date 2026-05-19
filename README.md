@@ -50,12 +50,12 @@
 
 ## MHUD Speed
 
-- `mspeed` - Enable/Disable MHUD Speed
+- `/mspeed` - Enable/Disable MHUD Speed
 
-- `mspeeds` - Open MHUD Speed Settings Menu
+- `/mspeeds` - Open MHUD Speed Settings Menu
 
 ## Input Overlay
 
-- `mkey` - Enable/Disable Input Overlay
+- `/mkey` - Enable/Disable Input Overlay
 
-- `mkeys` - Open Input Overlay Settings Menu
+- `/mkeys` - Open Input Overlay Settings Menu
