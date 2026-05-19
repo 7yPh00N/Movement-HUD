@@ -2,7 +2,13 @@
 
 # Commands
 
-- `/dps` - Open Plugin Settings Menu
+## General
+
+- `mhud` - Open Plugin Settings Menu
+
+## Distance Prediction
+
+- `/dps` - Open Distance Prediction Settings Menu
 
 - `/dp` `/distpred` - Enable/Disable Plugin
 
@@ -23,6 +29,8 @@
 - `/scjpred` - Stand-Up Count Jump
 
 - `/dcjpred` - Double Count Jump
+
+- `/mcjpred` - Multi Count Jump
 
 - `/wjpred` - Weird Jump
 
