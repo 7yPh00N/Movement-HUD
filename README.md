@@ -4,7 +4,7 @@
 
 ## General
 
-- `mhud` - Open Plugin Settings Menu
+- `/mhud` - Open Plugin Settings Menu
 
 ## Distance Prediction
 
