@@ -4,7 +4,7 @@
 #define MOVETYPE_FLY 5
 
 new const PLUGIN_NAME[] = "Distance Prediction"
-new const PLUGIN_VERSION[] = "1.5.2"
+new const PLUGIN_VERSION[] = "1.5.3"
 new const PLUGIN_AUTHOR[] = "7yPh00N"
 // new const Float:LJ_JUMP_TIME = 0.73227289328465705598
 // new const Float:SBJ_JUMP_TIME = 0.66085311074049502000 // kz_longjumps2
@@ -90,6 +90,8 @@ new g_HistoryHead[33]
 new g_HistorySize[33]
 new g_OverlapFrames[33]
 new g_DeadAirFrames[33]
+new g_OverlapInvalidFrames[33]
+new g_PrevWasOverlap[33]
 
 stock Float:CalcTimeToLand(Float:z0, Float:vz0, Float:targetZ, Float:grav)
 {
@@ -340,6 +342,8 @@ public client_connect(id)
     g_HistoryHead[id] = 0
     g_HistorySize[id] = 0
     g_OverlapFrames[id] = 0
+    g_OverlapInvalidFrames[id] = 0
+    g_PrevWasOverlap[id] = 0
     g_DeadAirFrames[id] = 0
     for(new i = 0; i < 32; i++)
         g_StrafeMaxDistance[id][i] = 0.0
@@ -1501,6 +1505,8 @@ public fw_PlayerPreThink(id)
         g_ReleasedKey[id] = 0
         g_ReleasedKeyDiff[id] = 0
         g_OverlapFrames[id] = 0
+        g_OverlapInvalidFrames[id] = 0
+        g_PrevWasOverlap[id] = 0
         g_DeadAirFrames[id] = 0
         
         new bool:keyW = !!(buttons & IN_FORWARD)
@@ -1783,7 +1789,18 @@ public fw_PlayerPreThink(id)
                 else if (isWS || isAD)
                 {
                     g_OverlapFrames[id]++
+                    if (g_PrevWasOverlap[id])
+                        g_OverlapInvalidFrames[id]++
+                    g_PrevWasOverlap[id] = 1
                 }
+                else
+                {
+                    g_PrevWasOverlap[id] = 0
+                }
+            }
+            else
+            {
+                g_PrevWasOverlap[id] = 0
             }
             
             if (noKeys)
@@ -1819,7 +1836,18 @@ public fw_PlayerPreThink(id)
                 else if (isWS || isAD)
                 {
                     g_OverlapFrames[id]++
+                    if (g_PrevWasOverlap[id])
+                        g_OverlapInvalidFrames[id]++
+                    g_PrevWasOverlap[id] = 1
                 }
+                else
+                {
+                    g_PrevWasOverlap[id] = 0
+                }
+            }
+            else
+            {
+                g_PrevWasOverlap[id] = 0
             }
             
             if (noKeys)
@@ -2120,6 +2148,7 @@ stock show_console_detail(id)
             formatex(releaseDiffStr, charsmax(releaseDiffStr), "%d", releaseDiff)
         
         new overlapFrames = g_OverlapFrames[id]
+        new overlapInvalidFrames = g_OverlapInvalidFrames[id]
         new deadAirFrames = g_DeadAirFrames[id]
         
         new Float:maxDist = g_InitialPredicted[id]
@@ -2141,7 +2170,13 @@ stock show_console_detail(id)
         else
             formatex(maxGainStr, charsmax(maxGainStr), "%.3f", maxGain)
         
-        client_print(observers[k], print_console, "^n[Initial: %.3f] [Max: %.3f (%s)] [%s: %s] [OL: %d] [DA: %d]", g_InitialPredicted[id], maxDist, maxGainStr, keyName, releaseDiffStr, overlapFrames, deadAirFrames)
+        new invalidCount = 0
+        if (releaseDiff >= 0)
+            invalidCount += releaseDiff
+        invalidCount += overlapInvalidFrames
+        invalidCount += deadAirFrames
+        
+        client_print(observers[k], print_console, "^n[Initial: %.3f | Max: %.3f (%s)] [Invalid: %d (%s: %s | OL: %d/%d | DA: %d)]", g_InitialPredicted[id], maxDist, maxGainStr, invalidCount, keyName, releaseDiffStr, overlapInvalidFrames, overlapFrames, deadAirFrames)
         
         for (new i = 1; i <= g_StrafeCount[id]; i++)
         {
