@@ -4,7 +4,7 @@
 #define MOVETYPE_FLY 5
 
 new const PLUGIN_NAME[] = "Distance Prediction"
-new const PLUGIN_VERSION[] = "1.5.1"
+new const PLUGIN_VERSION[] = "1.5.2"
 new const PLUGIN_AUTHOR[] = "7yPh00N"
 // new const Float:LJ_JUMP_TIME = 0.73227289328465705598
 // new const Float:SBJ_JUMP_TIME = 0.66085311074049502000 // kz_longjumps2
@@ -80,6 +80,16 @@ new bool:g_ConsoleDetailEnabled[33]
 new Float:g_StrafeFrameDistance[33][32][128]
 new g_StrafeFrameCount[33][32]
 new bool:g_PendingConsoleDetail[33]
+new bool:g_PreLanding[33]
+new g_ReleasedKey[33]
+new g_ReleasedKeyDiff[33]
+new g_JumpFrame[33]
+new g_FrameCount[33]
+new g_KeyHistory[33][12][5]
+new g_HistoryHead[33]
+new g_HistorySize[33]
+new g_OverlapFrames[33]
+new g_DeadAirFrames[33]
 
 stock Float:CalcTimeToLand(Float:z0, Float:vz0, Float:targetZ, Float:grav)
 {
@@ -139,6 +149,7 @@ public plugin_init()
     register_clcmd("say /scjpred", "cmd_set_cj")
     register_clcmd("say /dcjpred", "cmd_set_dcj")
     register_clcmd("say /wjpred", "cmd_set_dcj")
+    register_clcmd("say /mcjpred", "cmd_set_dcj")
     register_clcmd("say /sbjpred", "cmd_set_sbj")
     register_clcmd("say /bjpred", "cmd_set_bj")
     register_clcmd("say /ldjpred", "cmd_set_ldj")
@@ -200,7 +211,7 @@ public cmd_set_dcj(id)
     if (!is_user_connected(id)) return PLUGIN_HANDLED;
     g_JumpTypeIndex[id] = 3;
     UpdateCurrentThresholds(id);
-    client_print_color(id, id, "^4[7yPh00N]^1 Jump Type: ^3DCJ / WJ");
+    client_print_color(id, id, "^4[7yPh00N]^1 Jump Type: ^3DCJ / MCJ / WJ");
     SaveSettings(id);
     return PLUGIN_HANDLED;
 }
@@ -321,6 +332,15 @@ public client_connect(id)
     g_InPrediction[id] = false
     g_ConsoleDetailEnabled[id] = true
     g_PendingConsoleDetail[id] = false
+    g_PreLanding[id] = false
+    g_ReleasedKey[id] = 0
+    g_ReleasedKeyDiff[id] = 0
+    g_JumpFrame[id] = 0
+    g_FrameCount[id] = 0
+    g_HistoryHead[id] = 0
+    g_HistorySize[id] = 0
+    g_OverlapFrames[id] = 0
+    g_DeadAirFrames[id] = 0
     for(new i = 0; i < 32; i++)
         g_StrafeMaxDistance[id][i] = 0.0
     for(new i = 0; i < 32; i++)
@@ -348,6 +368,7 @@ stock ResetJumpPrediction(id)
     g_UseUpperRect[id] = false
     g_PendingLandingDisplay[id] = false
     g_PendingConsoleDetail[id] = false
+    g_PreLanding[id] = false
     // 清空HUD
     clear_strafe_stats(id)
 }
@@ -482,7 +503,7 @@ stock show_jumptypemenu(id)
         formatex(text, charsmax(text), "\rJump Type^n^n")
         formatex(text, charsmax(text), "%s\r1. \wLJ / HJ%s^n", text, g_JumpTypeIndex[id] == 1 ? " \y[Current]" : "")
         formatex(text, charsmax(text), "%s\r2. \wCJ / SCJ%s^n", text, g_JumpTypeIndex[id] == 2 ? " \y[Current]" : "")
-        formatex(text, charsmax(text), "%s\r3. \wDCJ / WJ%s^n", text, g_JumpTypeIndex[id] == 3 ? " \y[Current]" : "")
+        formatex(text, charsmax(text), "%s\r3. \wDCJ / MCJ / WJ%s^n", text, g_JumpTypeIndex[id] == 3 ? " \y[Current]" : "")
         formatex(text, charsmax(text), "%s\r4. \wSBJ%s^n", text, g_JumpTypeIndex[id] == 4 ? " \y[Current]" : "")
         formatex(text, charsmax(text), "%s\r5. \wBJ%s^n", text, g_JumpTypeIndex[id] == 5 ? " \y[Current]" : "")
         formatex(text, charsmax(text), "%s\r6. \wLDJ%s^n^n", text, g_JumpTypeIndex[id] == 6 ? " \y[Current]" : "")
@@ -494,7 +515,7 @@ stock show_jumptypemenu(id)
         formatex(text, charsmax(text), "\r选择跳跃类型^n^n")
         formatex(text, charsmax(text), "%s\r1. \wLJ / HJ%s^n", text, g_JumpTypeIndex[id] == 1 ? " \y[当前]" : "")
         formatex(text, charsmax(text), "%s\r2. \wCJ / SCJ%s^n", text, g_JumpTypeIndex[id] == 2 ? " \y[当前]" : "")
-        formatex(text, charsmax(text), "%s\r3. \wDCJ / WJ%s^n", text, g_JumpTypeIndex[id] == 3 ? " \y[当前]" : "")
+        formatex(text, charsmax(text), "%s\r3. \wDCJ / MCJ / WJ%s^n", text, g_JumpTypeIndex[id] == 3 ? " \y[当前]" : "")
         formatex(text, charsmax(text), "%s\r4. \wSBJ%s^n", text, g_JumpTypeIndex[id] == 4 ? " \y[当前]" : "")
         formatex(text, charsmax(text), "%s\r5. \wBJ%s^n", text, g_JumpTypeIndex[id] == 5 ? " \y[当前]" : "")
         formatex(text, charsmax(text), "%s\r6. \wLDJ%s^n^n", text, g_JumpTypeIndex[id] == 6 ? " \y[当前]" : "")
@@ -1454,15 +1475,165 @@ public fw_PlayerPreThink(id)
             g_PreJumpActive[id] = false;
             g_PreJumpTime[id] = 0.0;
             g_TakeoffFuser2[id] = 0.0;
+            g_PreLanding[id] = false;
         }
     }
     g_PrevOrigin[id] = currOrigin
+    g_FrameCount[id]++
     new flags = pev(id, pev_flags)
     new bool:onGround = !!(flags & FL_ONGROUND)
     new buttons = pev(id, pev_button)
     new oldbuttons = pev(id, pev_oldbuttons)
+    
+    g_KeyHistory[id][g_HistoryHead[id]][0] = (oldbuttons & IN_FORWARD) ? 1 : 0
+    g_KeyHistory[id][g_HistoryHead[id]][1] = (oldbuttons & IN_BACK) ? 1 : 0
+    g_KeyHistory[id][g_HistoryHead[id]][2] = (oldbuttons & IN_MOVELEFT) ? 1 : 0
+    g_KeyHistory[id][g_HistoryHead[id]][3] = (oldbuttons & IN_MOVERIGHT) ? 1 : 0
+    g_KeyHistory[id][g_HistoryHead[id]][4] = g_FrameCount[id] - 1
+    
+    g_HistoryHead[id] = (g_HistoryHead[id] + 1) % 12
+    if (g_HistorySize[id] < 12)
+        g_HistorySize[id]++
+    
     if ((buttons & IN_JUMP) && !(oldbuttons & IN_JUMP) && onGround)
     {
+        g_JumpFrame[id] = g_FrameCount[id]
+        g_ReleasedKey[id] = 0
+        g_ReleasedKeyDiff[id] = 0
+        g_OverlapFrames[id] = 0
+        g_DeadAirFrames[id] = 0
+        
+        new bool:keyW = !!(buttons & IN_FORWARD)
+        new bool:keyS = !!(buttons & IN_BACK)
+        new bool:keyA = !!(buttons & IN_MOVELEFT)
+        new bool:keyD = !!(buttons & IN_MOVERIGHT)
+        new bool:oldKeyW = !!(oldbuttons & IN_FORWARD)
+        new bool:oldKeyS = !!(oldbuttons & IN_BACK)
+        new bool:oldKeyA = !!(oldbuttons & IN_MOVELEFT)
+        new bool:oldKeyD = !!(oldbuttons & IN_MOVERIGHT)
+        
+        new bool:skipHistory = false
+        
+        if (!skipHistory && (oldKeyW && !keyW) && oldKeyA)
+        {
+            g_ReleasedKey[id] = 2
+            g_ReleasedKeyDiff[id] = 0
+            skipHistory = true
+        }
+        else if (!skipHistory && (oldKeyA && !keyA) && oldKeyW)
+        {
+            g_ReleasedKey[id] = 1
+            g_ReleasedKeyDiff[id] = 0
+            skipHistory = true
+        }
+        else if (!skipHistory && (oldKeyW && !keyW) && oldKeyD)
+        {
+            g_ReleasedKey[id] = 2
+            g_ReleasedKeyDiff[id] = 0
+            skipHistory = true
+        }
+        else if (!skipHistory && (oldKeyD && !keyD) && oldKeyW)
+        {
+            g_ReleasedKey[id] = 4
+            g_ReleasedKeyDiff[id] = 0
+            skipHistory = true
+        }
+        else if (!skipHistory && (oldKeyS && !keyS) && oldKeyA)
+        {
+            g_ReleasedKey[id] = 3
+            g_ReleasedKeyDiff[id] = 0
+            skipHistory = true
+        }
+        else if (!skipHistory && (oldKeyA && !keyA) && oldKeyS)
+        {
+            g_ReleasedKey[id] = 1
+            g_ReleasedKeyDiff[id] = 0
+            skipHistory = true
+        }
+        else if (!skipHistory && (oldKeyS && !keyS) && oldKeyD)
+        {
+            g_ReleasedKey[id] = 3
+            g_ReleasedKeyDiff[id] = 0
+            skipHistory = true
+        }
+        else if (!skipHistory && (oldKeyD && !keyD) && oldKeyS)
+        {
+            g_ReleasedKey[id] = 4
+            g_ReleasedKeyDiff[id] = 0
+            skipHistory = true
+        }
+        
+        if (!skipHistory)
+        {
+            new searchCount = g_HistorySize[id] - 1
+            if (searchCount > 10) searchCount = 10
+            
+            new startIdx = g_HistoryHead[id]
+            for (new i = 0; i < searchCount; i++)
+            {
+                new histIdx = (startIdx - 1 - i + 12) % 12
+                if (histIdx < 0 || histIdx >= 12)
+                    continue
+                
+                new prevFrame = g_KeyHistory[id][histIdx][4]
+                if (prevFrame <= 0)
+                    continue
+                
+                new diff = prevFrame - g_JumpFrame[id] + 1
+                if (diff < -10 || diff >= 0)
+                    continue
+                
+                new prevW = g_KeyHistory[id][histIdx][0]
+                new prevS = g_KeyHistory[id][histIdx][1]
+                new prevA = g_KeyHistory[id][histIdx][2]
+                new prevD = g_KeyHistory[id][histIdx][3]
+                
+                if (g_ReleasedKey[id] == 0)
+                {
+                    if (prevW && !keyW && prevA)
+                    {
+                        g_ReleasedKey[id] = 2
+                        g_ReleasedKeyDiff[id] = diff
+                    }
+                    else if (prevW && !keyW && prevD)
+                    {
+                        g_ReleasedKey[id] = 2
+                        g_ReleasedKeyDiff[id] = diff
+                    }
+                    else if (prevA && !keyA && prevS)
+                    {
+                        g_ReleasedKey[id] = 1
+                        g_ReleasedKeyDiff[id] = diff
+                    }
+                    else if (prevA && !keyA && prevW)
+                    {
+                        g_ReleasedKey[id] = 1
+                        g_ReleasedKeyDiff[id] = diff
+                    }
+                    else if (prevS && !keyS && prevA)
+                    {
+                        g_ReleasedKey[id] = 3
+                        g_ReleasedKeyDiff[id] = diff
+                    }
+                    else if (prevS && !keyS && prevD)
+                    {
+                        g_ReleasedKey[id] = 3
+                        g_ReleasedKeyDiff[id] = diff
+                    }
+                    else if (prevD && !keyD && prevW)
+                    {
+                        g_ReleasedKey[id] = 4
+                        g_ReleasedKeyDiff[id] = diff
+                    }
+                    else if (prevD && !keyD && prevS)
+                    {
+                        g_ReleasedKey[id] = 4
+                        g_ReleasedKeyDiff[id] = diff
+                    }
+                }
+            }
+        }
+        
         new bool:isLJ = (g_JumpTypeIndex[id] <= 3);
         new bool:ducking = !!(pev(id, pev_flags) & FL_DUCKING)
   
@@ -1553,10 +1724,138 @@ public fw_PlayerPreThink(id)
     }
     if (g_JumpActive[id])
     {
+        if (g_ReleasedKey[id] == 0)
+        {
+            new bool:keyW = !!(buttons & IN_FORWARD)
+            new bool:keyS = !!(buttons & IN_BACK)
+            new bool:keyA = !!(buttons & IN_MOVELEFT)
+            new bool:keyD = !!(buttons & IN_MOVERIGHT)
+            new bool:oldKeyW = !!(oldbuttons & IN_FORWARD)
+            new bool:oldKeyS = !!(oldbuttons & IN_BACK)
+            new bool:oldKeyA = !!(oldbuttons & IN_MOVELEFT)
+            new bool:oldKeyD = !!(oldbuttons & IN_MOVERIGHT)
+            
+            if (!keyW && oldKeyW)
+            {
+                g_ReleasedKey[id] = 2
+                g_ReleasedKeyDiff[id] = g_FrameCount[id] - g_JumpFrame[id]
+            }
+            else if (!keyA && oldKeyA)
+            {
+                g_ReleasedKey[id] = 1
+                g_ReleasedKeyDiff[id] = g_FrameCount[id] - g_JumpFrame[id]
+            }
+            else if (!keyS && oldKeyS)
+            {
+                g_ReleasedKey[id] = 3
+                g_ReleasedKeyDiff[id] = g_FrameCount[id] - g_JumpFrame[id]
+            }
+            else if (!keyD && oldKeyD)
+            {
+                g_ReleasedKey[id] = 4
+                g_ReleasedKeyDiff[id] = g_FrameCount[id] - g_JumpFrame[id]
+            }
+        }
+        
+        new bool:oldKeyW = !!(oldbuttons & IN_FORWARD)
+        new bool:oldKeyS = !!(oldbuttons & IN_BACK)
+        new bool:oldKeyA = !!(oldbuttons & IN_MOVELEFT)
+        new bool:oldKeyD = !!(oldbuttons & IN_MOVERIGHT)
+        
+        new bool:isWA = oldKeyW && oldKeyA
+        new bool:isWD = oldKeyW && oldKeyD
+        new bool:isSA = oldKeyS && oldKeyA
+        new bool:isSD = oldKeyS && oldKeyD
+        new bool:isWS = oldKeyW && oldKeyS
+        new bool:isAD = oldKeyA && oldKeyD
+        new bool:noKeys = !oldKeyW && !oldKeyS && !oldKeyA && !oldKeyD
+        
+        if (!onGround)
+        {
+            if ((isWA || isWD || isSA || isSD || isWS || isAD) && noKeys == false)
+            {
+                if ((isWA || isWD) && !isSA && !isSD)
+                {
+                }
+                else if ((isSA || isSD) && !isWA && !isWD)
+                {
+                }
+                else if (isWS || isAD)
+                {
+                    g_OverlapFrames[id]++
+                }
+            }
+            
+            if (noKeys)
+            {
+                g_DeadAirFrames[id]++
+            }
+        }
+        
         // 如果在跳跃过程中检测到onground状态，提前结束预测
         if (onGround && !g_JumpFirstFrame[id])
         {
-            g_PendingLandingDisplay[id] = true; // 延迟1帧显示（防止与其他插件冲突导致溢出）
+            new bool:keyW = !!(buttons & IN_FORWARD)
+            new bool:keyS = !!(buttons & IN_BACK)
+            new bool:keyA = !!(buttons & IN_MOVELEFT)
+            new bool:keyD = !!(buttons & IN_MOVERIGHT)
+            
+            new bool:isWA = keyW && keyA
+            new bool:isWD = keyW && keyD
+            new bool:isSA = keyS && keyA
+            new bool:isSD = keyS && keyD
+            new bool:isWS = keyW && keyS
+            new bool:isAD = keyA && keyD
+            new bool:noKeys = !keyW && !keyS && !keyA && !keyD
+            
+            if ((isWA || isWD || isSA || isSD || isWS || isAD) && noKeys == false)
+            {
+                if ((isWA || isWD) && !isSA && !isSD)
+                {
+                }
+                else if ((isSA || isSD) && !isWA && !isWD)
+                {
+                }
+                else if (isWS || isAD)
+                {
+                    g_OverlapFrames[id]++
+                }
+            }
+            
+            if (noKeys)
+            {
+                g_DeadAirFrames[id]++
+            }
+            
+            new Float:currentOrigin[3]
+            pev(id, pev_origin, currentOrigin)
+            new Float:targetZ
+            if (g_JumpTypeIndex[id] == 6)
+            {
+                targetZ = g_GroundZ[id] + 18.0;
+            }
+            else
+            {
+                new Float:offset
+                if (g_JumpTypeIndex[id] == 4 || g_JumpTypeIndex[id] == 5)
+                    offset = -18.0
+                else
+                    offset = g_DuckStart[id] ? 0.0 : -18.0
+                new Float:startZ
+                if (g_JumpTypeIndex[id] == 4 || g_JumpTypeIndex[id] == 5)
+                    startZ = g_PreJumpOriginZ[id]
+                else
+                    startZ = g_JumpStartOrigin[id][2]
+                targetZ = startZ + offset
+            }
+            new Float:vz = velocity[2]
+            new Float:remaining = CalcTimeToLand(currentOrigin[2], vz, targetZ, g_Gravity)
+            if (remaining > 0.0)
+                g_PreLanding[id] = true
+            else
+                g_PreLanding[id] = false
+            
+            g_PendingLandingDisplay[id] = true;
             g_JumpActive[id] = false;
             g_PreJumpActive[id] = false;
             g_PreJumpTime[id] = 0.0;
@@ -1708,6 +2007,7 @@ public fw_PlayerPreThink(id)
         else if (!g_StatsDisplayed[id] && g_InitialPredicted[id] > 0.0)
         {
             g_PendingLandingDisplay[id] = true; // 延迟1帧显示（防止与其他插件冲突导致溢出）
+            g_PreLanding[id] = false;
             g_JumpActive[id] = false;
             g_PreJumpActive[id] = false;
             g_PreJumpTime[id] = 0.0;
@@ -1801,7 +2101,47 @@ stock show_console_detail(id)
     
     for (new k = 0; k < obs_count; k++)
     {
-        client_print(observers[k], print_console, "^n[DETAILED] Initial: %.3f", g_InitialPredicted[id])
+        new releaseKey = g_ReleasedKey[id]
+        new releaseDiff = g_ReleasedKeyDiff[id]
+        new keyName[8] = ""
+        if (releaseKey == 1)
+            formatex(keyName, charsmax(keyName), "A")
+        else if (releaseKey == 2)
+            formatex(keyName, charsmax(keyName), "W")
+        else if (releaseKey == 3)
+            formatex(keyName, charsmax(keyName), "S")
+        else if (releaseKey == 4)
+            formatex(keyName, charsmax(keyName), "D")
+        
+        new releaseDiffStr[16]
+        if (releaseDiff >= 0)
+            formatex(releaseDiffStr, charsmax(releaseDiffStr), "+%d", releaseDiff)
+        else
+            formatex(releaseDiffStr, charsmax(releaseDiffStr), "%d", releaseDiff)
+        
+        new overlapFrames = g_OverlapFrames[id]
+        new deadAirFrames = g_DeadAirFrames[id]
+        
+        new Float:maxDist = g_InitialPredicted[id]
+        for (new i = 1; i <= g_StrafeCount[id]; i++)
+        {
+            new frameCount = g_StrafeFrameCount[id][i]
+            for (new j = 0; j < frameCount; j++)
+            {
+                new Float:dist = g_StrafeFrameDistance[id][i][j]
+                if (dist > maxDist)
+                    maxDist = dist
+            }
+        }
+        new Float:maxGain = maxDist - g_InitialPredicted[id]
+        
+        new maxGainStr[16]
+        if (maxGain >= 0.0)
+            formatex(maxGainStr, charsmax(maxGainStr), "+%.3f", maxGain)
+        else
+            formatex(maxGainStr, charsmax(maxGainStr), "%.3f", maxGain)
+        
+        client_print(observers[k], print_console, "^n[Initial: %.3f] [Max: %.3f (%s)] [%s: %s] [OL: %d] [DA: %d]", g_InitialPredicted[id], maxDist, maxGainStr, keyName, releaseDiffStr, overlapFrames, deadAirFrames)
         
         for (new i = 1; i <= g_StrafeCount[id]; i++)
         {
