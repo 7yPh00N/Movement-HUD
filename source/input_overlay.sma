@@ -3,7 +3,7 @@
 #include <hamsandwich>
 
 #define PLUGIN_NAME "Input Overlay"
-#define PLUGIN_VERSION "1.0.0"
+#define PLUGIN_VERSION "1.0.1"
 #define PLUGIN_AUTHOR "7yPh00N"
 
 new bool:g_KeyDisplayEnabled[33]
@@ -443,7 +443,7 @@ public fw_PlayerPreThink(id)
     
     new diffStr[8]
     if (releaseDiff > 0)
-        formatex(diffStr, charsmax(diffStr), "+%d", releaseDiff)
+        formatex(diffStr, charsmax(diffStr), "%d", releaseDiff)
     else if (releaseDiff < 0)
         formatex(diffStr, charsmax(diffStr), "%d", releaseDiff)
     else if (releaseDiff == 0 && releaseKey != 0)
@@ -459,7 +459,7 @@ public fw_PlayerPreThink(id)
         if (keyW)
             formatex(top_row, charsmax(top_row), "%s   W", top_row)
         else
-            formatex(top_row, charsmax(top_row), "%s   =", top_row)
+            formatex(top_row, charsmax(top_row), "%s   –", top_row)
     }
     
     if (keyJ)
@@ -474,21 +474,33 @@ public fw_PlayerPreThink(id)
     if (releaseKey == 1 && !keyA)
         formatex(a_display, charsmax(a_display), "%s", diffStr)
     else
-        formatex(a_display, charsmax(a_display), "%s", keyA ? "A" : "=")
+        formatex(a_display, charsmax(a_display), "%s", keyA ? "A" : "–")
     
     // S键显示
     if (releaseKey == 3 && !keyS)
         formatex(s_display, charsmax(s_display), "%s", diffStr)
     else
-        formatex(s_display, charsmax(s_display), "%s", keyS ? "S" : "=")
+        formatex(s_display, charsmax(s_display), "%s", keyS ? "S" : "–")
     
     // D键显示
     if (releaseKey == 4 && !keyD)
         formatex(d_display, charsmax(d_display), "%s", diffStr)
     else
-        formatex(d_display, charsmax(d_display), "%s", keyD ? "D" : "=")
+        formatex(d_display, charsmax(d_display), "%s", keyD ? "D" : "–")
     
-    formatex(bottom_row, charsmax(bottom_row), "%s   %s   %s", a_display, s_display, d_display)
+    // 根据是否负数调整空格数量
+    new spacer1[4], spacer2[4]
+    if (a_display[0] == '-')
+        formatex(spacer1, charsmax(spacer1), "  ")
+    else
+        formatex(spacer1, charsmax(spacer1), "   ")
+    
+    if (d_display[0] == '-')
+        formatex(spacer2, charsmax(spacer2), "  ")
+    else
+        formatex(spacer2, charsmax(spacer2), "   ")
+    
+    formatex(bottom_row, charsmax(bottom_row), "%s%s%s%s%s", a_display, spacer1, s_display, spacer2, d_display)
     
     formatex(key_text, charsmax(key_text), "%s^n%s", top_row, bottom_row)
     
@@ -501,6 +513,37 @@ public fw_PlayerPreThink(id)
         hud_r = 255
         hud_g = 0
         hud_b = 0
+    }
+    
+    if (g_JumpFrame[id] > 0 && g_ReleasedKeyDiff[id] > 0 && g_ReleasedKey[id] == 0)
+    {
+        hud_r = 255
+        hud_g = 0
+        hud_b = 0
+    }
+    
+    new bool:isCombo = (keyW && keyA) || (keyW && keyD) || (keyS && keyA) || (keyS && keyD)
+    
+    if ((g_JumpFrame[id] > 0 && !onGround && g_ReleasedKeyDiff[id] == 0) || (g_JumpFrame[id] == g_FrameCount[id] && isCombo))
+    {
+        hud_r = 255
+        hud_g = 0
+        hud_b = 0
+    }
+    
+    if (!onGround)
+    {
+        new bool:singleW = keyW && !keyA && !keyD && !keyS
+        new bool:singleS = keyS && !keyA && !keyD && !keyW
+        new bool:singleA = keyA && !keyW && !keyS && !keyD
+        new bool:singleD = keyD && !keyW && !keyS && !keyA
+        
+        if (singleW || singleS || singleA || singleD)
+        {
+            hud_r = 255
+            hud_g = 255
+            hud_b = 255
+        }
     }
     
     new observers[33], obs_count = 0
