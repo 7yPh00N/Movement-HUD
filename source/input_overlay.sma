@@ -3,7 +3,7 @@
 #include <hamsandwich>
 
 #define PLUGIN_NAME "Input Overlay"
-#define PLUGIN_VERSION "1.0.1"
+#define PLUGIN_VERSION "1.0.2"
 #define PLUGIN_AUTHOR "7yPh00N"
 
 new bool:g_KeyDisplayEnabled[33]
@@ -27,6 +27,11 @@ new g_HistoryHead[33]
 new g_HistorySize[33]
 new g_ReleasedKey[33]
 new g_ReleasedKeyDiff[33]
+new const MENU_KEY[] = "KeyMenu"
+new Float:g_KeyY[33]
+new Float:g_LastPosX[33]
+new g_FirstFrame[33]
+new bool:g_FastMovement[33]
 
 public plugin_init()
 {
@@ -36,10 +41,16 @@ public plugin_init()
     register_clcmd("say_team /mkey", "cmd_toggle_keys")
     register_clcmd("say mkey", "cmd_toggle_keys")
     register_clcmd("say_team mkey", "cmd_toggle_keys")
+    register_clcmd("say /mkeys", "cmd_keymenu")
+    register_clcmd("say_team /mkeys", "cmd_keymenu")
+    register_clcmd("say mkeys", "cmd_keymenu")
+    register_clcmd("say_team mkeys", "cmd_keymenu")
+    register_menucmd(register_menuid(MENU_KEY), (1<<0)|(1<<1)|(1<<2)|(1<<3)|(1<<4)|(1<<5)|(1<<6)|(1<<7)|(1<<8)|(1<<9), "handle_keymenu")
     
     for (new i = 0; i < 33; i++)
     {
         g_KeyDisplayEnabled[i] = true
+        g_KeyY[i] = 0.85
         g_FrameCount[i] = 0
         g_JumpFrame[i] = 0
         g_WAReleaseDiff[i] = 0
@@ -59,12 +70,17 @@ public plugin_init()
         g_HistorySize[i] = 0
         g_ReleasedKey[i] = 0
         g_ReleasedKeyDiff[i] = 0
+        g_LastPosX[i] = 0.0
+        g_FirstFrame[i] = 1
+        g_FastMovement[i] = false
     }
+    
+    LoadInputSettings(0)
 }
 
 public client_connect(id)
 {
-    g_KeyDisplayEnabled[id] = true
+    LoadInputSettings(id)
     g_FrameCount[id] = 0
     g_JumpFrame[id] = 0
     g_WAReleaseDiff[id] = 0
@@ -84,6 +100,9 @@ public client_connect(id)
     g_HistorySize[id] = 0
     g_ReleasedKey[id] = 0
     g_ReleasedKeyDiff[id] = 0
+    g_LastPosX[id] = 0.0
+    g_FirstFrame[id] = 1
+    g_FastMovement[id] = false
 }
 
 public cmd_toggle_keys(id)
@@ -100,6 +119,18 @@ public fw_PlayerPreThink(id)
         return FMRES_IGNORED;
     
     g_FrameCount[id]++
+    
+    new Float:currPosX
+    pev(id, pev_origin, currPosX)
+    
+    if (!g_FirstFrame[id])
+    {
+        new Float:deltaX = floatabs(currPosX - g_LastPosX[id])
+        if (deltaX > 50.0)
+            g_FastMovement[id] = true
+    }
+    g_LastPosX[id] = currPosX
+    g_FirstFrame[id] = 0
     
     new buttons = pev(id, pev_button)
     new oldbuttons = pev(id, pev_oldbuttons)
@@ -193,6 +224,7 @@ public fw_PlayerPreThink(id)
         g_SDReleaseDiff[id] = 0
         g_ReleasedKey[id] = 0
         g_ReleasedKeyDiff[id] = 0
+        g_FastMovement[id] = false
         
         new bool:skipHistory = false
         
@@ -450,7 +482,7 @@ public fw_PlayerPreThink(id)
         formatex(diffStr, charsmax(diffStr), "0")
     
     // 第一行：C, W/数字, J
-    if (releaseKey == 2 && !keyW)
+    if (releaseKey == 2 && !keyW && !g_FastMovement[id])
     {
         formatex(top_row, charsmax(top_row), "%s   %s", top_row, diffStr)
     }
@@ -471,19 +503,19 @@ public fw_PlayerPreThink(id)
     new a_display[8], s_display[8], d_display[8]
     
     // A键显示
-    if (releaseKey == 1 && !keyA)
+    if (releaseKey == 1 && !keyA && !g_FastMovement[id])
         formatex(a_display, charsmax(a_display), "%s", diffStr)
     else
         formatex(a_display, charsmax(a_display), "%s", keyA ? "A" : "–")
     
     // S键显示
-    if (releaseKey == 3 && !keyS)
+    if (releaseKey == 3 && !keyS && !g_FastMovement[id])
         formatex(s_display, charsmax(s_display), "%s", diffStr)
     else
         formatex(s_display, charsmax(s_display), "%s", keyS ? "S" : "–")
     
     // D键显示
-    if (releaseKey == 4 && !keyD)
+    if (releaseKey == 4 && !keyD && !g_FastMovement[id])
         formatex(d_display, charsmax(d_display), "%s", diffStr)
     else
         formatex(d_display, charsmax(d_display), "%s", keyD ? "D" : "–")
@@ -551,7 +583,7 @@ public fw_PlayerPreThink(id)
     
     if (g_KeyDisplayEnabled[id])
     {
-        set_dhudmessage(hud_r, hud_g, hud_b, -1.0, 0.85, 0, 0.0, 0.011, 0.0, 0.0)
+        set_dhudmessage(hud_r, hud_g, hud_b, -1.0, g_KeyY[id], 0, 0.0, 0.011, 0.0, 0.0)
         for (new k = 0; k < obs_count; k++)
             show_dhudmessage(observers[k], key_text)
     }
@@ -561,7 +593,7 @@ public fw_PlayerPreThink(id)
         {
             if (observers[k] != id)
             {
-                set_dhudmessage(hud_r, hud_g, hud_b, -1.0, 0.85, 0, 0.0, 0.011, 0.0, 0.0)
+                set_dhudmessage(hud_r, hud_g, hud_b, -1.0, g_KeyY[id], 0, 0.0, 0.011, 0.0, 0.0)
                 show_dhudmessage(observers[k], key_text)
             }
         }
@@ -581,5 +613,123 @@ stock GetObservers(jumper, observers[], &count)
             continue
         if (pev(i, pev_iuser2) == jumper)
             observers[count++] = i
+    }
+}
+
+public cmd_keymenu(id)
+{
+    if (!is_user_connected(id)) return PLUGIN_HANDLED;
+    show_keymenu(id);
+    return PLUGIN_HANDLED;
+}
+
+stock show_keymenu(id)
+{
+    new text[512]
+    formatex(text, charsmax(text), "\rInput Overlay^n^n")
+    if (g_KeyDisplayEnabled[id])
+        formatex(text, charsmax(text), "%s\r1. \wGlobal - \yON^n^n", text)
+    else
+        formatex(text, charsmax(text), "%s\r1. \wGlobal - \rOFF^n^n", text)
+    formatex(text, charsmax(text), "%s\r2. \wY - 0.01^n", text)
+    formatex(text, charsmax(text), "%s\r3. \wY + 0.01^n", text)
+    formatex(text, charsmax(text), "%s\r4. \yDefault Y (0.85)^n^n", text)
+    formatex(text, charsmax(text), "%s\r5. \ySave Settings^n^n", text)
+    formatex(text, charsmax(text), "%s\r0. \wBack", text)
+    show_menu(id, (1<<0)|(1<<1)|(1<<2)|(1<<3)|(1<<4)|(1<<5)|(1<<6)|(1<<7)|(1<<8)|(1<<9), text, -1, MENU_KEY)
+}
+
+public handle_keymenu(id, key)
+{
+    if (key == 9) { client_cmd(id, "say /mhud"); return; }
+    switch (key)
+    {
+        case 0: { g_KeyDisplayEnabled[id] = !g_KeyDisplayEnabled[id]; show_keymenu(id); }
+        case 1:
+        {
+            g_KeyY[id] -= 0.01;
+            if (g_KeyY[id] < 0.0) g_KeyY[id] = 0.0;
+            show_keymenu(id);
+        }
+        case 2:
+        {
+            g_KeyY[id] += 0.01;
+            if (g_KeyY[id] > 1.0) g_KeyY[id] = 1.0;
+            show_keymenu(id);
+        }
+        case 3: { g_KeyY[id] = 0.85; show_keymenu(id); }
+        case 4: { SaveInputSettings(id); show_keymenu(id); }
+    }
+}
+
+stock SaveInputSettings(id=0)
+{
+    new configsdir[64]
+    get_localinfo("amxx_configsdir", configsdir, charsmax(configsdir))
+    new szFile[128]
+    formatex(szFile, charsmax(szFile), "%s/input_overlay.ini", configsdir)
+    
+    new fp = fopen(szFile, "wt")
+    if (fp)
+    {
+        fprintf(fp, "enable_input_overlay %d^n", g_KeyDisplayEnabled[id] ? 1 : 0)
+        fprintf(fp, "hud_input_overlay_y %.2f^n", g_KeyY[id])
+        
+        fclose(fp)
+        if (id != 0)
+            client_print_color(id, id, "^4[7yPh00N]^1 Settings Saved in ^4input_overlay.ini")
+    }
+    else
+    {
+        if (id != 0)
+            client_print_color(id, print_team_red, "^3[7yPh00N] Save Failed!!")
+    }
+}
+
+stock LoadInputSettings(id=0)
+{
+    new configsdir[64]
+    get_localinfo("amxx_configsdir", configsdir, charsmax(configsdir))
+    new szFile[128]
+    formatex(szFile, charsmax(szFile), "%s/input_overlay.ini", configsdir)
+    
+    new bool:temp_Enabled = true
+    new Float:temp_Y = 0.85
+    
+    if (!file_exists(szFile))
+    {
+        if (id == 0) SaveInputSettings(0)
+        if (id != 0)
+        {
+            g_KeyDisplayEnabled[id] = temp_Enabled
+            g_KeyY[id] = temp_Y
+        }
+        return
+    }
+    
+    new data[128], len
+    new line = 0
+    while (read_file(szFile, line, data, charsmax(data), len))
+    {
+        trim(data)
+        if (data[0] == 0 || data[0] == '/') { line++; continue; }
+        
+        new key[32], arg1[32], arg2[32]
+        new count = parse(data, key, charsmax(key), arg1, charsmax(arg1), arg2, charsmax(arg2))
+        
+        if (equal(key, "enable_input_overlay") && count >= 2)
+            temp_Enabled = (str_to_num(arg1) == 1)
+        else if (equal(key, "hud_input_overlay_y") && count >= 2)
+        {
+            new Float:fy = str_to_float(arg1)
+            if (fy >= 0.0 && fy <= 1.0) temp_Y = fy
+        }
+        line++
+    }
+    
+    if (id != 0)
+    {
+        g_KeyDisplayEnabled[id] = temp_Enabled
+        g_KeyY[id] = temp_Y
     }
 }
