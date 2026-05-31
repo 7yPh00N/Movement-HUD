@@ -3,7 +3,7 @@
 #include <hamsandwich>
 
 #define PLUGIN_NAME "MHUD Speed"
-#define PLUGIN_VERSION "1.0.1"
+#define PLUGIN_VERSION "1.0.2"
 #define PLUGIN_AUTHOR "7yPh00N"
 
 new const MENU_SPEED[] = "SpeedMenu"
