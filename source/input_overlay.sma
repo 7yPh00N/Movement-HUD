@@ -3,7 +3,7 @@
 #include <hamsandwich>
 
 #define PLUGIN_NAME "Input Overlay"
-#define PLUGIN_VERSION "1.0.2"
+#define PLUGIN_VERSION "1.0.3"
 #define PLUGIN_AUTHOR "7yPh00N"
 
 new bool:g_KeyDisplayEnabled[33]
@@ -32,6 +32,7 @@ new Float:g_KeyY[33]
 new Float:g_LastPosX[33]
 new g_FirstFrame[33]
 new bool:g_FastMovement[33]
+new Float:g_DhudHoldTime = 0.011
 
 public plugin_init()
 {
@@ -76,6 +77,7 @@ public plugin_init()
     }
     
     LoadInputSettings(0)
+    LoadServerConfig()
 }
 
 public client_connect(id)
@@ -583,7 +585,7 @@ public fw_PlayerPreThink(id)
     
     if (g_KeyDisplayEnabled[id])
     {
-        set_dhudmessage(hud_r, hud_g, hud_b, -1.0, g_KeyY[id], 0, 0.0, 0.011, 0.0, 0.0)
+        set_dhudmessage(hud_r, hud_g, hud_b, -1.0, g_KeyY[id], 0, 0.0, g_DhudHoldTime, 0.0, 0.0)
         for (new k = 0; k < obs_count; k++)
             show_dhudmessage(observers[k], key_text)
     }
@@ -593,7 +595,7 @@ public fw_PlayerPreThink(id)
         {
             if (observers[k] != id)
             {
-                set_dhudmessage(hud_r, hud_g, hud_b, -1.0, g_KeyY[id], 0, 0.0, 0.011, 0.0, 0.0)
+                set_dhudmessage(hud_r, hud_g, hud_b, -1.0, g_KeyY[id], 0, 0.0, g_DhudHoldTime, 0.0, 0.0)
                 show_dhudmessage(observers[k], key_text)
             }
         }
@@ -732,4 +734,32 @@ stock LoadInputSettings(id=0)
         g_KeyDisplayEnabled[id] = temp_Enabled
         g_KeyY[id] = temp_Y
     }
+}
+
+stock LoadServerConfig()
+{
+    new configsdir[64]
+    get_localinfo("amxx_configsdir", configsdir, charsmax(configsdir))
+    new szFile[128]
+    formatex(szFile, charsmax(szFile), "%s/mhud_server.ini", configsdir)
+  
+    if (!file_exists(szFile))
+    {
+        g_DhudHoldTime = 0.011
+        return
+    }
+  
+    new data[128], len, line = 0
+    while (read_file(szFile, line, data, charsmax(data), len))
+    {
+        trim(data)
+        if (data[0] == 0 || data[0] == '/') { line++; continue; }
+        new key[32], arg[32]
+        parse(data, key, charsmax(key), arg, charsmax(arg))
+        if (equal(key, "dhud_holdtime"))
+            g_DhudHoldTime = str_to_float(arg)
+        line++
+    }
+  
+    if (g_DhudHoldTime < 0.001 || g_DhudHoldTime > 5.0) g_DhudHoldTime = 0.011
 }
