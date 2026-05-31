@@ -4,7 +4,7 @@
 #define MOVETYPE_FLY 5
 
 new const PLUGIN_NAME[] = "Distance Prediction"
-new const PLUGIN_VERSION[] = "1.5.4"
+new const PLUGIN_VERSION[] = "1.5.5"
 new const PLUGIN_AUTHOR[] = "7yPh00N"
 // new const Float:LJ_JUMP_TIME = 0.73227289328465705598
 // new const Float:SBJ_JUMP_TIME = 0.66085311074049502000 // kz_longjumps2
@@ -839,7 +839,7 @@ stock LoadServerConfig()
         {
             fprintf(fp, "// 1. LAN Server^n// 2. Public Server^nmovementhud_server 1^n^n")
             fprintf(fp, "// 1. English^n// 2. Chinese^nmenu_language 1^n^n")
-            fprintf(fp, "// HUD^nhud_best_channel 4^n^n")
+            fprintf(fp, "// HUD^nhud_bestpred_channel 4^n^n")
             fprintf(fp, "// DHUD^n")
             fprintf(fp, "dhud_holdtime 0.011000^n")
             fprintf(fp, "dhud_flashtime 5^n")
@@ -864,7 +864,7 @@ stock LoadServerConfig()
             g_ServerType = str_to_num(arg)
         else if (equal(key, "menu_language"))
             g_MenuLanguage = str_to_num(arg)
-        else if (equal(key, "hud_best_channel"))
+        else if (equal(key, "hud_bestpred_channel"))
             g_BestHudChannel = str_to_num(arg)
         else if (equal(key, "dhud_holdtime"))
             g_DhudHoldTime = str_to_float(arg)
