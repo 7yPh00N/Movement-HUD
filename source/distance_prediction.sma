@@ -4,7 +4,7 @@
 #define MOVETYPE_FLY 5
 
 new const PLUGIN_NAME[] = "Distance Prediction"
-new const PLUGIN_VERSION[] = "1.5.3"
+new const PLUGIN_VERSION[] = "1.5.4"
 new const PLUGIN_AUTHOR[] = "7yPh00N"
 // new const Float:LJ_JUMP_TIME = 0.73227289328465705598
 // new const Float:SBJ_JUMP_TIME = 0.66085311074049502000 // kz_longjumps2
@@ -92,6 +92,7 @@ new g_OverlapFrames[33]
 new g_DeadAirFrames[33]
 new g_OverlapInvalidFrames[33]
 new g_PrevWasOverlap[33]
+new g_TwoKeyPrestrafe[33]
 
 stock Float:CalcTimeToLand(Float:z0, Float:vz0, Float:targetZ, Float:grav)
 {
@@ -344,6 +345,7 @@ public client_connect(id)
     g_OverlapFrames[id] = 0
     g_OverlapInvalidFrames[id] = 0
     g_PrevWasOverlap[id] = 0
+    g_TwoKeyPrestrafe[id] = 0
     g_DeadAirFrames[id] = 0
     for(new i = 0; i < 32; i++)
         g_StrafeMaxDistance[id][i] = 0.0
@@ -416,7 +418,7 @@ stock show_predmenu(id)
         formatex(text, charsmax(text), "%s\r6. \wBest Predicted Distance^n", text)
         formatex(text, charsmax(text), "%s\r7. \wLanding Area Prediction^n^n", text)
         formatex(text, charsmax(text), "%s\r8. \ySave Settings^n^n", text)
-        formatex(text, charsmax(text), "%s\r0. \wExit", text)
+        formatex(text, charsmax(text), "%s\r0. \wBack", text)
     }
     if (g_MenuLanguage == 2)
     {
@@ -436,13 +438,14 @@ stock show_predmenu(id)
         formatex(text, charsmax(text), "%s\r6. \w最佳预测距离统计功能^n", text)
         formatex(text, charsmax(text), "%s\r7. \w着陆区域/上板预测功能^n^n", text)
         formatex(text, charsmax(text), "%s\r8. \y保存设置^n^n", text)
-        formatex(text, charsmax(text), "%s\r0. \w关闭菜单", text)
+        formatex(text, charsmax(text), "%s\r0. \w返回", text)
     }
     show_menu(id, (1<<0)|(1<<1)|(1<<2)|(1<<3)|(1<<4)|(1<<5)|(1<<6)|(1<<7)|(1<<8)|(1<<9), text, -1, MENU_MAIN)
 }
 
 public handle_predmenu(id, key)
 {
+    if (key == 9) { client_cmd(id, "say /mhud"); return; }
     switch (key)
     {
         case 0: { g_Enabled[id] = !g_Enabled[id]; show_predmenu(id); }
@@ -453,7 +456,6 @@ public handle_predmenu(id, key)
         case 5: show_stats_pos_menu(id)
         case 6: show_landingmenu(id)
         case 7: { SaveSettings(id); show_predmenu(id); }
-        case 8: return
     }
 }
 
@@ -828,7 +830,7 @@ stock LoadServerConfig()
     new configsdir[64]
     get_localinfo("amxx_configsdir", configsdir, charsmax(configsdir))
     new szFile[128]
-    formatex(szFile, charsmax(szFile), "%s/movementhud_server.ini", configsdir)
+    formatex(szFile, charsmax(szFile), "%s/mhud_server.ini", configsdir)
   
     if (!file_exists(szFile))
     {
@@ -1507,6 +1509,7 @@ public fw_PlayerPreThink(id)
         g_OverlapFrames[id] = 0
         g_OverlapInvalidFrames[id] = 0
         g_PrevWasOverlap[id] = 0
+        g_TwoKeyPrestrafe[id] = 0
         g_DeadAirFrames[id] = 0
         
         new bool:keyW = !!(buttons & IN_FORWARD)
@@ -1517,6 +1520,27 @@ public fw_PlayerPreThink(id)
         new bool:oldKeyS = !!(oldbuttons & IN_BACK)
         new bool:oldKeyA = !!(oldbuttons & IN_MOVELEFT)
         new bool:oldKeyD = !!(oldbuttons & IN_MOVERIGHT)
+        
+        new bool:hasTwoKeyPrestrafe = false
+        new searchCount = g_HistorySize[id]
+        if (searchCount > 10) searchCount = 10
+        new startIdx = g_HistoryHead[id]
+        for (new i = 0; i < searchCount; i++)
+        {
+            new histIdx = (startIdx - 1 - i + 12) % 12
+            if (histIdx < 0 || histIdx >= 12)
+                continue
+            new prevW = g_KeyHistory[id][histIdx][0]
+            new prevS = g_KeyHistory[id][histIdx][1]
+            new prevA = g_KeyHistory[id][histIdx][2]
+            new prevD = g_KeyHistory[id][histIdx][3]
+            if ((prevW && prevA) || (prevW && prevD) || (prevS && prevA) || (prevS && prevD))
+            {
+                hasTwoKeyPrestrafe = true
+                break
+            }
+        }
+        g_TwoKeyPrestrafe[id] = hasTwoKeyPrestrafe ? 1 : 0
         
         new bool:skipHistory = false
         
@@ -2171,12 +2195,19 @@ stock show_console_detail(id)
             formatex(maxGainStr, charsmax(maxGainStr), "%.3f", maxGain)
         
         new invalidCount = 0
-        if (releaseDiff >= 0)
+        if (g_TwoKeyPrestrafe[id] && releaseDiff >= 0)
             invalidCount += releaseDiff
         invalidCount += overlapInvalidFrames
         invalidCount += deadAirFrames
         
-        client_print(observers[k], print_console, "^n[Initial: %.3f | Max: %.3f (%s)] [Invalid: %d (%s: %s | OL: %d/%d | DA: %d)]", g_InitialPredicted[id], maxDist, maxGainStr, invalidCount, keyName, releaseDiffStr, overlapInvalidFrames, overlapFrames, deadAirFrames)
+        if (g_TwoKeyPrestrafe[id])
+        {
+            client_print(observers[k], print_console, "^n[Initial: %.3f | Max: %.3f (%s)] [Invalid: %d (%s: %s | OL: %d/%d | DA: %d)]", g_InitialPredicted[id], maxDist, maxGainStr, invalidCount, keyName, releaseDiffStr, overlapInvalidFrames, overlapFrames, deadAirFrames)
+        }
+        else
+        {
+            client_print(observers[k], print_console, "^n[Initial: %.3f | Max: %.3f (%s)] [Invalid: %d (OL: %d/%d | DA: %d)]", g_InitialPredicted[id], maxDist, maxGainStr, invalidCount, overlapInvalidFrames, overlapFrames, deadAirFrames)
+        }
         
         for (new i = 1; i <= g_StrafeCount[id]; i++)
         {
