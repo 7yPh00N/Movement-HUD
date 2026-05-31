@@ -6,7 +6,7 @@
 
 3. Add the following 4 lines to the file:
 
-- `movement-hud.amxx`
+- `mhud_menu.amxx`
 
 - `mhud_speed.amxx`
 
