@@ -67,3 +67,14 @@
 - `/bjpred` - Bhop Jump
 
 - `/ldjpred` - Ladder Jump
+
+- `/dpmethod` `/expected` - Switch the prediction method between Predicted and Expected (also item 8 in `/dps`)
+
+# Expected distance (this fork)
+
+The original prediction ("Predicted") assumes you stop strafing right now and fly straight on at your current velocity. This fork adds a second method, **Expected**, which assumes you keep strafing the way you have so far in this jump:
+
+- **Gain rate** `c = (s² − s0²) / air time`, where `s0` is the takeoff speed and `s` the current horizontal speed.
+- **Efficiency** `η = a / path`: the straight distance from takeoff divided by the path actually flown.
+
+`Expected = a + (1 − loss) · L+ + 32`

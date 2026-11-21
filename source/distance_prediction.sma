@@ -1,10 +1,15 @@
+// Distance Prediction - part of Movement-HUD by 7yPh00N (https://github.com/7yPh00N/Movement-HUD), GPLv3.
+// Modified by lbgdre, 2026-11-21: added the "Expected" prediction method (see the block marked
+// "Expected distance (added in this fork)"), the /dpmethod and /expected commands, menu item 8
+// (Save Settings moved to 9) and the pred_method setting.
+
 #include <amxmodx>
 #include <fakemeta>
 
 #define MOVETYPE_FLY 5
 
 new const PLUGIN_NAME[] = "Distance Prediction"
-new const PLUGIN_VERSION[] = "1.5.5"
+new const PLUGIN_VERSION[] = "1.5.5-expected"
 new const PLUGIN_AUTHOR[] = "7yPh00N"
 // new const Float:LJ_JUMP_TIME = 0.73227289328465705598
 // new const Float:SBJ_JUMP_TIME = 0.66085311074049502000 // kz_longjumps2
@@ -94,6 +99,133 @@ new g_OverlapInvalidFrames[33]
 new g_PrevWasOverlap[33]
 new g_TwoKeyPrestrafe[33]
 
+// ===== Expected distance (added in this fork) =====
+// Method shown by the real-time HUD, best stats, sonar and landing box:
+// 0 = Predicted (original: stop strafing now), 1 = Expected (strafing goes on as it has so far).
+#define EXP_FLAT_PERIOD 0.07   // seconds before landing with no speed gain assumed
+new g_PredMethod[33] = { 1, ... }
+new Float:g_ExpPath[33]        // horizontal path flown since takeoff
+new Float:g_ExpLastPos[33][3]
+new Float:g_ExpTakeoffTime[33]
+new const g_PredMethodNames[2][] = { "Predicted", "Expected" }
+
+stock ExpectedReset(id, const Float:start[3])
+{
+    g_ExpPath[id] = 0.0
+    g_ExpLastPos[id][0] = start[0]
+    g_ExpLastPos[id][1] = start[1]
+    g_ExpLastPos[id][2] = start[2]
+    g_ExpTakeoffTime[id] = get_gametime()
+}
+
+// Adds this frame's horizontal step to the path flown (skips teleports).
+stock ExpectedTrack(id, const Float:origin[3])
+{
+    new Float:dx = origin[0] - g_ExpLastPos[id][0]
+    new Float:dy = origin[1] - g_ExpLastPos[id][1]
+    new Float:step = floatsqroot(dx*dx + dy*dy)
+    if (step < 100.0)
+        g_ExpPath[id] += step
+    g_ExpLastPos[id][0] = origin[0]
+    g_ExpLastPos[id][1] = origin[1]
+    g_ExpLastPos[id][2] = origin[2]
+}
+
+// Expected distance. Window = the whole jump so far:
+//   a   = straight distance from takeoff now,  s = horizontal speed now,  s0 = takeoff speed
+//   c   = (s^2 - s0^2) / air time   (speed^2 gained per second)
+//   eta = a / path flown            (how straight the jump has been)
+// L+  = path still to fly if speed^2 keeps growing at c, except in the last EXP_FLAT_PERIOD
+//       seconds before landing (no gain there: players duck and barely turn).
+// Efficiency ramps from eta now to 1 at landing, so the loss is (1 - eta) times the
+// speed-weighted mean of (1 - t/T) over the remaining time T.
+// Expected = a + (1 - loss) * L+ + 32
+stock Float:ExpectedDistance(id, const Float:origin[3], const Float:velocity[3], Float:T)
+{
+    new Float:dx = origin[0] - g_JumpStartOrigin[id][0]
+    new Float:dy = origin[1] - g_JumpStartOrigin[id][1]
+    new Float:a = floatsqroot(dx*dx + dy*dy)
+    new Float:s = floatsqroot(velocity[0]*velocity[0] + velocity[1]*velocity[1])
+    new Float:s0 = g_TakeoffHorizontalSpeed[id]
+    new Float:air = get_gametime() - g_ExpTakeoffTime[id]
+    new Float:c = 0.0
+    new Float:eta = 1.0
+    if (air > 0.0005)
+    {
+        c = (s*s - s0*s0) / air
+        if (g_ExpPath[id] > 1.0)
+            eta = floatmin(a / g_ExpPath[id], 1.0)
+    }
+    if (T < 0.0) T = 0.0
+
+    new Float:tailA = floatmax(T - EXP_FLAT_PERIOD, 0.0)
+
+    // L+ : integral of sqrt(s^2 + c t) over [0, tailA] (written so it stays exact when c is near 0;
+    // if c < 0 makes speed^2 reach 0 first, the speed is held at 0), then constant speed to landing
+    new Float:tEnd = tailA
+    if (c < 0.0)
+        tEnd = floatmin(tailA, s*s / -c)
+    new Float:e = floatmax(s*s + c*tEnd, 0.0)
+    new Float:re = floatsqroot(e)
+    new Float:Lp
+    if (re + s > 0.001)
+        Lp = (2.0/3.0) * tEnd * (e + re*s + s*s) / (re + s)
+    else
+        Lp = 0.0
+    Lp += re * (T - tailA)
+
+    new Float:loss = 0.0
+    if (T > 0.0)
+    {
+        new Float:h = T / 16.0
+        new Float:acc = 0.0, Float:wsum = 0.0
+        for (new j = 0; j < 16; j++)
+        {
+            new Float:t = (float(j) + 0.5) * h
+            new Float:st = floatsqroot(floatmax(s*s + c*floatmin(t, tailA), 1.0))
+            acc += st * (1.0 - t / T)
+            wsum += st
+        }
+        if (wsum > 0.0)
+            loss = floatclamp((1.0 - eta) * acc / wsum, 0.0, 1.0)
+    }
+    return a + (1.0 - loss) * Lp + 32.0
+}
+
+stock bool:UseExpected(id)
+{
+    // LDJ keeps the original prediction (its takeoff comes off a ladder)
+    return (g_PredMethod[id] == 1 && g_JumpTypeIndex[id] != 6)
+}
+
+stock LoadPredMethod(id)
+{
+    new configsdir[64], szFile[128], data[128], len, line = 0
+    get_localinfo("amxx_configsdir", configsdir, charsmax(configsdir))
+    formatex(szFile, charsmax(szFile), "%s/distance_prediction.ini", configsdir)
+    if (!file_exists(szFile)) return
+    while (read_file(szFile, line++, data, charsmax(data), len))
+    {
+        trim(data)
+        new key[32], arg1[32]
+        if (parse(data, key, charsmax(key), arg1, charsmax(arg1)) >= 2 && equal(key, "pred_method"))
+        {
+            g_PredMethod[id] = clamp(str_to_num(arg1), 0, 1)
+            return
+        }
+    }
+}
+
+public cmd_toggle_method(id)
+{
+    if (!is_user_connected(id)) return PLUGIN_HANDLED;
+    g_PredMethod[id] = 1 - g_PredMethod[id];
+    client_print_color(id, id, "^4[7yPh00N]^1 Prediction Method: ^3%s", g_PredMethodNames[g_PredMethod[id]]);
+    SaveSettings(id);
+    return PLUGIN_HANDLED;
+}
+// ===== end Expected =====
+
 stock Float:CalcTimeToLand(Float:z0, Float:vz0, Float:targetZ, Float:grav)
 {
     if (grav <= 0.0)
@@ -162,6 +294,8 @@ public plugin_init()
     register_clcmd("say /distpred", "cmd_toggle_enabled")
     register_clcmd("say /dp", "cmd_toggle_enabled")
     register_clcmd("say /sonar", "cmd_toggle_sonar")
+    register_clcmd("say /dpmethod", "cmd_toggle_method")
+    register_clcmd("say /expected", "cmd_toggle_method")
     register_menucmd(register_menuid(MENU_MAIN), (1<<0)|(1<<1)|(1<<2)|(1<<3)|(1<<4)|(1<<5)|(1<<6)|(1<<7)|(1<<8)|(1<<9), "handle_predmenu")
     register_menucmd(register_menuid(MENU_JUMPTYPE), (1<<0)|(1<<1)|(1<<2)|(1<<3)|(1<<4)|(1<<5)|(1<<6)|(1<<9), "handle_jumptype")
     register_menucmd(register_menuid(MENU_COLOR), (1<<0)|(1<<1)|(1<<2)|(1<<3)|(1<<4)|(1<<5)|(1<<6)|(1<<7)|(1<<8)|(1<<9), "handle_colormenu")
@@ -298,6 +432,7 @@ public client_connect(id)
 {
     // 为新玩家设置默认值
     LoadSettings(id)
+    LoadPredMethod(id)
   
     g_JumpActive[id] = false
     g_StatsDisplayed[id] = false
@@ -399,7 +534,7 @@ public cmd_predmenu(id)
 
 stock show_predmenu(id)
 {
-    new text[512]
+    new text[768]
     if (g_MenuLanguage == 1)
     {
         formatex(text, charsmax(text), "\rDistance Prediction Settings^n^n")
@@ -416,8 +551,9 @@ stock show_predmenu(id)
         formatex(text, charsmax(text), "%s\r4. \wHUD Color^n", text)
         formatex(text, charsmax(text), "%s\r5. \wReal-Time Prediction^n", text)
         formatex(text, charsmax(text), "%s\r6. \wBest Predicted Distance^n", text)
-        formatex(text, charsmax(text), "%s\r7. \wLanding Area Prediction^n^n", text)
-        formatex(text, charsmax(text), "%s\r8. \ySave Settings^n^n", text)
+        formatex(text, charsmax(text), "%s\r7. \wLanding Area Prediction^n", text)
+        formatex(text, charsmax(text), "%s\r8. \wMethod - \y%s^n^n", text, g_PredMethodNames[g_PredMethod[id]])
+        formatex(text, charsmax(text), "%s\r9. \ySave Settings^n^n", text)
         formatex(text, charsmax(text), "%s\r0. \wBack", text)
     }
     if (g_MenuLanguage == 2)
@@ -436,8 +572,9 @@ stock show_predmenu(id)
         formatex(text, charsmax(text), "%s\r4. \w自定义HUD颜色^n", text)
         formatex(text, charsmax(text), "%s\r5. \w实时预测功能^n", text)
         formatex(text, charsmax(text), "%s\r6. \w最佳预测距离统计功能^n", text)
-        formatex(text, charsmax(text), "%s\r7. \w着陆区域/上板预测功能^n^n", text)
-        formatex(text, charsmax(text), "%s\r8. \y保存设置^n^n", text)
+        formatex(text, charsmax(text), "%s\r7. \w着陆区域/上板预测功能^n", text)
+        formatex(text, charsmax(text), "%s\r8. \w预测方式 - \y%s^n^n", text, g_PredMethod[id] ? "期望" : "预测")
+        formatex(text, charsmax(text), "%s\r9. \y保存设置^n^n", text)
         formatex(text, charsmax(text), "%s\r0. \w返回", text)
     }
     show_menu(id, (1<<0)|(1<<1)|(1<<2)|(1<<3)|(1<<4)|(1<<5)|(1<<6)|(1<<7)|(1<<8)|(1<<9), text, -1, MENU_MAIN)
@@ -455,7 +592,8 @@ public handle_predmenu(id, key)
         case 4: show_realtime_ymenu(id)
         case 5: show_stats_pos_menu(id)
         case 6: show_landingmenu(id)
-        case 7: { SaveSettings(id); show_predmenu(id); }
+        case 7: { g_PredMethod[id] = 1 - g_PredMethod[id]; show_predmenu(id); }
+        case 8: { SaveSettings(id); show_predmenu(id); }
     }
 }
 
@@ -1240,6 +1378,7 @@ stock SaveSettings(id=0)
         fprintf(fp, "enable_plugin %d^n", (useId != -1) ? (g_Enabled[useId] ? 1 : 0) : 1)
         fprintf(fp, "enable_sonar %d^n", (useId != -1) ? (g_SonarEnabled[useId] ? 1 : 0) : 1)
         fprintf(fp, "jump_type %d^n", (useId != -1) ? g_JumpTypeIndex[useId] : 1)
+        fprintf(fp, "pred_method %d^n", (useId != -1) ? g_PredMethod[useId] : 1)
         fprintf(fp, "^n")
         fprintf(fp, "// HUD Settings^n")
         fprintf(fp, "hud_color %d %d %d^n", (useId != -1) ? g_HudR[useId] : 255, (useId != -1) ? g_HudG[useId] : 255, (useId != -1) ? g_HudB[useId] : 0)
@@ -1375,6 +1514,7 @@ stock StartJump(id, bool:ducking)
     pev(id, pev_velocity, vel)
     new Float:horiz = floatsqroot(vel[0]*vel[0] + vel[1]*vel[1])
     g_TakeoffHorizontalSpeed[id] = horiz
+    ExpectedReset(id, g_JumpStartOrigin[id])
     new Float:offset
     if (g_JumpTypeIndex[id] == 2 || g_JumpTypeIndex[id] == 4)
         offset = -18.0
@@ -1731,6 +1871,7 @@ public fw_PlayerPreThink(id)
             g_JumpStartOrigin[id][1] = g_LadderOrigin[id][1];
             g_JumpStartOrigin[id][2] = g_LadderOrigin[id][2];
             g_GroundZ[id] = GetGroundZInRectangle(id, g_JumpStartOrigin[id]);
+            ExpectedReset(id, g_JumpStartOrigin[id])
             // 使用玩家停留在梯子上的最后速度
             new Float:horiz = floatsqroot(g_LadderVelocity[id][0]*g_LadderVelocity[id][0] + g_LadderVelocity[id][1]*g_LadderVelocity[id][1])
             new Float:vz0 = g_LadderVelocity[id][2]
@@ -1975,6 +2116,25 @@ public fw_PlayerPreThink(id)
             totalDistance = g_InitialPredicted[id];
             g_LDJFirstFrameUsed[id] = true;
         }
+        // Expected: replaces the shown value; the landing box moves along the line from takeoff
+        ExpectedTrack(id, currOrigin)
+        if (UseExpected(id))
+        {
+            new Float:expVel[3]
+            expVel[0] = horiz_vel_x
+            expVel[1] = horiz_vel_y
+            expVel[2] = 0.0
+            totalDistance = ExpectedDistance(id, currOrigin, expVel, remaining)
+            new Float:ax = currOrigin[0] - g_JumpStartOrigin[id][0]
+            new Float:ay = currOrigin[1] - g_JumpStartOrigin[id][1]
+            new Float:aLen = floatsqroot(ax*ax + ay*ay)
+            if (aLen >= 1.0)
+            {
+                new Float:r = (totalDistance - 32.0) / aLen
+                predX = g_JumpStartOrigin[id][0] + ax * r
+                predY = g_JumpStartOrigin[id][1] + ay * r
+            }
+        }
         g_PredX[id] = predX
         g_PredY[id] = predY
         g_PredZ[id] = g_GroundZ[id]
@@ -2088,7 +2248,7 @@ stock show_strafe_stats(id)
     // 如果没有记录任何strafe但存在初始预测距离，则直接显示初始预测距离
     if (g_StrafeCount[id] == 0 && g_InitialPredicted[id] > 0.0)
     {
-        format(text, charsmax(text), "Best Predicted Distance:^nInitial: %.1f^n", g_InitialPredicted[id])
+        format(text, charsmax(text), "Best %s Distance:^nInitial: %.1f^n", g_PredMethodNames[UseExpected(id) ? 1 : 0], g_InitialPredicted[id])
         if (g_ShowBest[id])
         {
             set_hudmessage(g_HudR[id], g_HudG[id], g_HudB[id], g_StatsX[id], g_StatsY[id], 0, 0.0, 999999.0, 0.0, 0.0, g_BestHudChannel)
@@ -2100,7 +2260,7 @@ stock show_strafe_stats(id)
         new observers[33], obs_count = 0
         GetObservers(id, observers, obs_count)
         for (new k = 0; k < obs_count; k++)
-            client_print(observers[k], print_console, "Best Predicted Distance:^nInitial: %.3f", g_InitialPredicted[id])
+            client_print(observers[k], print_console, "Best %s Distance:^nInitial: %.3f", g_PredMethodNames[UseExpected(id) ? 1 : 0], g_InitialPredicted[id])
         g_PendingConsoleDetail[id] = true;
         return
     }
@@ -2109,7 +2269,7 @@ stock show_strafe_stats(id)
         g_PendingConsoleDetail[id] = true;
         return
     }
-    format(text, charsmax(text), "Best Predicted Distance:^n")
+    format(text, charsmax(text), "Best %s Distance:^n", g_PredMethodNames[UseExpected(id) ? 1 : 0])
     for(new i = 1; i <= g_StrafeCount[id]; i++)
     {
         new Float:this_max = g_StrafeMaxDistance[id][i]
@@ -2130,7 +2290,7 @@ stock show_strafe_stats(id)
     GetObservers(id, observers, obs_count)
     for (new k = 0; k < obs_count; k++)
     {
-        client_print(observers[k], print_console, "Best Predicted Distance:")
+        client_print(observers[k], print_console, "Best %s Distance:", g_PredMethodNames[UseExpected(id) ? 1 : 0])
         for(new i = 1; i <= g_StrafeCount[id]; i++)
         {
             new Float:this_max = g_StrafeMaxDistance[id][i]
